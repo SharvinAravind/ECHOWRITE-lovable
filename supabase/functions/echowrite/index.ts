@@ -343,33 +343,37 @@ Keep the same tone, formatting, and meaning. Return ONLY the translated text, no
       }
     }
 
-    // Call Google Gemini API directly
-    const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
-    let aiResponse = null;
+    // Call Google Gemini API using native REST endpoint
+    const models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro"];
+    let content = "";
     let lastError = "";
 
     for (const model of models) {
       try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
         const response = await fetch(geminiUrl, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${GEMINI_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
+            contents: [
+              {
+                parts: [
+                  { text: `${systemPrompt}\n\n${userPrompt}` }
+                ]
+              }
             ],
-            temperature: 0.7,
+            generationConfig: {
+              temperature: 0.7,
+            },
           }),
         });
 
         if (response.ok) {
-          aiResponse = await response.json();
-          break;
+          const data = await response.json();
+          content = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (content) break;
         }
 
         const errorText = await response.text().catch(() => '');
@@ -383,14 +387,13 @@ Keep the same tone, formatting, and meaning. Return ONLY the translated text, no
       }
     }
 
-    if (!aiResponse) {
+    if (!content) {
       console.error("All models failed. Last error:", lastError);
       return new Response(
         JSON.stringify({ error: "Service temporarily busy. Please try again in a moment." }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    const content = aiResponse.choices?.[0]?.message?.content || "";
 
     let result;
     if (action === 'variations' || action === 'length-variations' || action === 'generate-visual') {
